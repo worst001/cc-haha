@@ -1,5 +1,5 @@
 import { MarkdownRenderer } from '../markdown/MarkdownRenderer'
-import { useState } from 'react'
+import { MessageActionBar } from './MessageActionBar'
 
 type Props = {
   content: string
@@ -7,35 +7,19 @@ type Props = {
 }
 
 export function AssistantMessage({ content, isStreaming }: Props) {
-  const [copied, setCopied] = useState(false)
-
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(content)
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 1500)
-    } catch {
-      setCopied(false)
-    }
-  }
-
   return (
-    <div className="group relative mb-3 ml-10">
-      {/* Copy button — absolute positioned, no reserved space */}
-      {!isStreaming && content.trim() && (
-        <button
-          onClick={handleCopy}
-          className="absolute -right-1 -top-1 rounded-md border border-[var(--color-border)]/60 bg-[var(--color-surface)] px-2 py-0.5 text-[10px] text-[var(--color-text-tertiary)] opacity-0 shadow-sm transition-opacity hover:text-[var(--color-text-primary)] group-hover:opacity-100"
-        >
-          {copied ? 'Copied' : 'Copy'}
-        </button>
-      )}
-      <div className="text-sm text-[var(--color-text-primary)]">
+    <div className="mb-5 ml-10 max-w-[calc(100%-2.5rem)]">
+      <div className="rounded-[20px] rounded-tl-[8px] border border-[var(--color-border)]/60 bg-[var(--color-surface)] px-4 py-3 text-sm text-[var(--color-text-primary)] shadow-sm">
         <MarkdownRenderer content={content} />
         {isStreaming && (
-          <span className="inline-block w-0.5 h-4 bg-[var(--color-brand)] animate-shimmer ml-0.5 align-text-bottom" />
+          <span className="ml-0.5 inline-block h-4 w-0.5 animate-shimmer bg-[var(--color-brand)] align-text-bottom" />
         )}
       </div>
+
+      <MessageActionBar
+        copyText={isStreaming ? undefined : content}
+        copyLabel="Copy reply"
+      />
     </div>
   )
 }

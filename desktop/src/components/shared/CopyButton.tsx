@@ -1,12 +1,23 @@
 import { useEffect, useState } from 'react'
+import { copyTextToClipboard } from '../chat/clipboard'
 
 type Props = {
   text: string
   label?: string
+  copiedLabel?: string
+  displayLabel?: string
+  displayCopiedLabel?: string
   className?: string
 }
 
-export function CopyButton({ text, label = 'Copy', className = '' }: Props) {
+export function CopyButton({
+  text,
+  label = 'Copy',
+  copiedLabel = 'Copied',
+  displayLabel,
+  displayCopiedLabel,
+  className = '',
+}: Props) {
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
@@ -17,17 +28,10 @@ export function CopyButton({ text, label = 'Copy', className = '' }: Props) {
 
   const handleCopy = async () => {
     try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text)
-      } else {
-        const textarea = document.createElement('textarea')
-        textarea.value = text
-        textarea.style.position = 'fixed'
-        textarea.style.opacity = '0'
-        document.body.appendChild(textarea)
-        textarea.select()
-        document.execCommand('copy')
-        document.body.removeChild(textarea)
+      const ok = await copyTextToClipboard(text)
+      if (!ok) {
+        setCopied(false)
+        return
       }
       setCopied(true)
     } catch {
@@ -35,15 +39,20 @@ export function CopyButton({ text, label = 'Copy', className = '' }: Props) {
     }
   }
 
+  const currentLabel = copied ? copiedLabel : label
+  const buttonText = copied
+    ? (displayCopiedLabel ?? copiedLabel)
+    : (displayLabel ?? label)
+
   return (
     <button
       type="button"
       onClick={handleCopy}
       className={className}
-      aria-label={copied ? 'Copied' : label}
-      title={copied ? 'Copied' : label}
+      aria-label={currentLabel}
+      title={currentLabel}
     >
-      {copied ? 'Copied' : label}
+      {buttonText}
     </button>
   )
 }
