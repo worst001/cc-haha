@@ -34,6 +34,7 @@ type SessionProcess = {
   pendingOutbound: string[]
   stderrLines: string[]
   sdkMessages: any[]
+  initMessage: any | null
   pendingPermissionRequests: Map<
     string,
     {
@@ -173,6 +174,7 @@ export class ConversationService {
       pendingOutbound: [],
       stderrLines: [],
       sdkMessages: [],
+      initMessage: null,
       pendingPermissionRequests: new Map(),
     }
     this.sessions.set(sessionId, session)
@@ -239,8 +241,18 @@ export class ConversationService {
     }
   }
 
+  removeOutputCallback(sessionId: string, callback: (msg: any) => void): void {
+    const session = this.sessions.get(sessionId)
+    if (!session) return
+    session.outputCallbacks = session.outputCallbacks.filter((entry) => entry !== callback)
+  }
+
   getRecentSdkMessages(sessionId: string): any[] {
     return [...(this.sessions.get(sessionId)?.sdkMessages ?? [])]
+  }
+
+  getSessionInitMessage(sessionId: string): any | null {
+    return this.sessions.get(sessionId)?.initMessage ?? null
   }
 
   sendMessage(
@@ -316,6 +328,60 @@ export class ConversationService {
     })
   }
 
+  requestControl(
+    sessionId: string,
+    request: Record<string, unknown>,
+    timeoutMs = 10_000,
+  ): Promise<Record<string, unknown>> {
+    if (!this.sessions.has(sessionId)) {
+      return Promise.reject(new Error('CLI session is not running'))
+    }
+
+    const requestId = crypto.randomUUID()
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.removeOutputCallback(sessionId, handleOutput)
+        reject(new Error(`Timed out waiting for ${String(request.subtype ?? 'control')} response`))
+      }, timeoutMs)
+
+      const finish = (fn: () => void) => {
+        clearTimeout(timeout)
+        this.removeOutputCallback(sessionId, handleOutput)
+        fn()
+      }
+
+      const handleOutput = (msg: any) => {
+        if (
+          msg?.type !== 'control_response' ||
+          msg.response?.request_id !== requestId
+        ) {
+          return
+        }
+
+        if (msg.response.subtype === 'error') {
+          finish(() => reject(new Error(String(msg.response.error || 'Control request failed'))))
+          return
+        }
+
+        finish(() => resolve(
+          msg.response.response && typeof msg.response.response === 'object'
+            ? msg.response.response as Record<string, unknown>
+            : {},
+        ))
+      }
+
+      this.onOutput(sessionId, handleOutput)
+      const sent = this.sendSdkMessage(sessionId, {
+        type: 'control_request',
+        request_id: requestId,
+        request,
+      })
+      if (!sent) {
+        finish(() => reject(new Error('CLI session is not running')))
+      }
+    })
+  }
+
   hasSession(sessionId: string): boolean {
     return this.sessions.has(sessionId)
   }
@@ -377,6 +443,9 @@ export class ConversationService {
         session.sdkMessages.push(msg)
         if (session.sdkMessages.length > 40) {
           session.sdkMessages.splice(0, 20)
+        }
+        if (msg?.type === 'system' && msg.subtype === 'init') {
+          session.initMessage = msg
         }
         if (
           msg?.type === 'control_request' &&
@@ -484,6 +553,17 @@ export class ConversationService {
 
     const activeSession = this.sessions.get(sessionId)
     if (activeSession?.proc === proc) {
+      const exitError = this.buildRuntimeExitMessage(sessionId, code)
+      for (const cb of activeSession.outputCallbacks) {
+        cb({
+          type: 'result',
+          subtype: 'error',
+          is_error: true,
+          result: exitError,
+          usage: { input_tokens: 0, output_tokens: 0 },
+          session_id: sessionId,
+        })
+      }
       this.sessions.delete(sessionId)
     }
   }
@@ -537,8 +617,11 @@ export class ConversationService {
       'ANTHROPIC_AUTH_TOKEN',
       'ANTHROPIC_MODEL',
       'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+      'ANTHROPIC_DEFAULT_HAIKU_MODEL_SUPPORTED_CAPABILITIES',
       'ANTHROPIC_DEFAULT_SONNET_MODEL',
+      'ANTHROPIC_DEFAULT_SONNET_MODEL_SUPPORTED_CAPABILITIES',
       'ANTHROPIC_DEFAULT_OPUS_MODEL',
+      'ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES',
     ] as const
 
     const cleanEnv = { ...process.env }
@@ -657,8 +740,11 @@ export class ConversationService {
         'ANTHROPIC_AUTH_TOKEN',
         'ANTHROPIC_MODEL',
         'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+        'ANTHROPIC_DEFAULT_HAIKU_MODEL_SUPPORTED_CAPABILITIES',
         'ANTHROPIC_DEFAULT_SONNET_MODEL',
+        'ANTHROPIC_DEFAULT_SONNET_MODEL_SUPPORTED_CAPABILITIES',
         'ANTHROPIC_DEFAULT_OPUS_MODEL',
+        'ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES',
       ].some((key) => typeof env[key] === 'string' && env[key]!.trim().length > 0)
     } catch {
       return false
@@ -788,6 +874,26 @@ export class ConversationService {
       'CLI_START_FAILED',
       true,
     )
+  }
+
+  private buildRuntimeExitMessage(sessionId: string, exitCode: number): string {
+    const session = this.sessions.get(sessionId)
+    const stderrText = session?.stderrLines.join('\n').trim() ?? ''
+    const recentMessages = session?.sdkMessages ?? []
+    const resultMessage = [...recentMessages]
+      .reverse()
+      .find((msg) => msg?.type === 'result' && msg.is_error)
+    const authStatus = [...recentMessages]
+      .reverse()
+      .find((msg) => msg?.type === 'auth_status')
+    const detail =
+      this.extractStartupDetail(resultMessage) ||
+      this.extractStartupDetail(authStatus) ||
+      stderrText
+
+    return detail
+      ? `CLI process exited unexpectedly (code ${exitCode}): ${detail}`
+      : `CLI process exited unexpectedly with code ${exitCode}.`
   }
 
   private extractStartupDetail(message: any): string {

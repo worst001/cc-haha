@@ -88,7 +88,7 @@ export async function handleProvidersApi(
     if (!id) {
       if (req.method === 'GET') {
         const { providers, activeId } = await providerService.listProviders()
-        return Response.json({ providers: providers.map(sanitizeProvider), activeId })
+        return Response.json({ providers, activeId })
       }
       if (req.method === 'POST') {
         return await handleCreate(req)
@@ -118,7 +118,7 @@ export async function handleProvidersApi(
     // /api/providers/:id
     if (req.method === 'GET') {
       const provider = await providerService.getProvider(id)
-      return Response.json({ provider: sanitizeProvider(provider) })
+      return Response.json({ provider })
     }
     if (req.method === 'PUT') {
       return await handleUpdate(req, id)
