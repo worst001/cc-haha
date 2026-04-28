@@ -7,6 +7,7 @@ export type AttachmentPreview = {
   name: string
   data?: string
   previewUrl?: string
+  mimeType?: string
 }
 
 type Props = {
@@ -23,7 +24,7 @@ export function AttachmentGallery({ attachments, variant = 'message', onRemove }
       attachments
         .filter((attachment) => attachment.type === 'image' && (attachment.previewUrl || attachment.data))
         .map((attachment) => ({
-          src: attachment.previewUrl || attachment.data || '',
+          src: getImageSrc(attachment),
           name: attachment.name,
         })),
     [attachments],
@@ -38,7 +39,7 @@ export function AttachmentGallery({ attachments, variant = 'message', onRemove }
       <div className={isComposer ? 'flex flex-wrap items-center gap-2' : 'grid grid-cols-1 gap-2 sm:grid-cols-2'}>
         {attachments.map((attachment, index) => {
           if (attachment.type === 'image' && (attachment.previewUrl || attachment.data)) {
-            const src = attachment.previewUrl || attachment.data || ''
+            const src = getImageSrc(attachment)
             return (
               <div
                 key={attachment.id || `${attachment.name}-${index}`}
@@ -110,4 +111,10 @@ export function AttachmentGallery({ attachments, variant = 'message', onRemove }
       )}
     </>
   )
+}
+
+function getImageSrc(attachment: AttachmentPreview): string {
+  const src = attachment.previewUrl || attachment.data || ''
+  if (!src || src.startsWith('data:') || src.startsWith('blob:')) return src
+  return `data:${attachment.mimeType || 'image/png'};base64,${src}`
 }

@@ -476,6 +476,27 @@ describe('Chat attachments', () => {
     fireEvent.click(screen.getByRole('button'))
     expect(screen.getByText('diagram.png')).toBeInTheDocument()
   })
+
+  it('UserMessage renders raw base64 image attachments with a data URL', () => {
+    render(
+      <UserMessage
+        content=""
+        attachments={[
+          {
+            type: 'image',
+            name: 'remote.jpg',
+            data: 'abc123',
+            mimeType: 'image/jpeg',
+          },
+        ]}
+      />,
+    )
+
+    expect(screen.getByRole('img')).toHaveAttribute(
+      'src',
+      'data:image/jpeg;base64,abc123',
+    )
+  })
 })
 
 describe('AppShell layout renders chrome', () => {

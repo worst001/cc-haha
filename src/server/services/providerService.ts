@@ -12,8 +12,13 @@ import * as os from 'os'
 import { ApiError } from '../middleware/errorHandler.js'
 import { anthropicToOpenaiChat } from '../proxy/transform/anthropicToOpenaiChat.js'
 import { anthropicToOpenaiResponses } from '../proxy/transform/anthropicToOpenaiResponses.js'
+import { anthropicToChatGPTCodexRequest } from '../proxy/transform/chatgptCodexRequest.js'
 import { openaiChatToAnthropic } from '../proxy/transform/openaiChatToAnthropic.js'
 import { openaiResponsesToAnthropic } from '../proxy/transform/openaiResponsesToAnthropic.js'
+import {
+  CHATGPT_CODEX_API_ENDPOINT,
+  chatgptAuthService,
+} from './chatgptAuthService.js'
 import type { AnthropicRequest, AnthropicResponse } from '../proxy/transform/types.js'
 import type {
   SavedProvider,
@@ -24,6 +29,7 @@ import type {
   ProviderTestResult,
   ProviderTestStepResult,
   ApiFormat,
+  ProviderAuthKind,
 } from '../types/provider.js'
 
 const MANAGED_ENV_KEYS = [
@@ -37,6 +43,15 @@ const MANAGED_ENV_KEYS = [
 ] as const
 
 const DEFAULT_INDEX: ProvidersIndex = { activeId: null, providers: [] }
+const CHATGPT_PROVIDER_PRESET_ID = 'chatgpt'
+const CHATGPT_PROVIDER_NAME = 'ChatGPT Connect'
+const CHATGPT_PROVIDER_BASE_URL = 'https://chatgpt.com/backend-api/codex'
+const CHATGPT_PROVIDER_MODELS = {
+  main: 'gpt-5.4',
+  haiku: 'gpt-5.4-mini',
+  sonnet: 'gpt-5.4',
+  opus: 'gpt-5.4',
+}
 
 export class ProviderService {
   private static serverPort = 3456
@@ -81,7 +96,7 @@ export class ProviderService {
     const dir = path.dirname(filePath)
     await fs.mkdir(dir, { recursive: true })
 
-    const tmpFile = `${filePath}.tmp.${Date.now()}`
+    const tmpFile = `${filePath}.tmp.${process.pid}.${crypto.randomUUID()}`
     try {
       await fs.writeFile(tmpFile, JSON.stringify(index, null, 2) + '\n', 'utf-8')
       await fs.rename(tmpFile, filePath)
@@ -106,7 +121,7 @@ export class ProviderService {
     const dir = path.dirname(filePath)
     await fs.mkdir(dir, { recursive: true })
 
-    const tmpFile = `${filePath}.tmp.${Date.now()}`
+    const tmpFile = `${filePath}.tmp.${process.pid}.${crypto.randomUUID()}`
     try {
       await fs.writeFile(tmpFile, JSON.stringify(settings, null, 2) + '\n', 'utf-8')
       await fs.rename(tmpFile, filePath)
@@ -149,6 +164,7 @@ export class ProviderService {
       apiKey: input.apiKey,
       baseUrl: input.baseUrl,
       apiFormat: input.apiFormat ?? 'anthropic',
+      authKind: input.authKind ?? 'api_key',
       models: input.models,
       ...(input.notes !== undefined && { notes: input.notes }),
     }
@@ -170,6 +186,7 @@ export class ProviderService {
       ...(input.apiKey !== undefined && { apiKey: input.apiKey }),
       ...(input.baseUrl !== undefined && { baseUrl: input.baseUrl }),
       ...(input.apiFormat !== undefined && { apiFormat: input.apiFormat }),
+      ...(input.authKind !== undefined && { authKind: input.authKind }),
       ...(input.models !== undefined && { models: input.models }),
       ...(input.notes !== undefined && { notes: input.notes }),
     }
@@ -219,6 +236,60 @@ export class ProviderService {
     index.activeId = null
     await this.writeIndex(index)
     await this.clearProviderFromSettings()
+  }
+
+  async ensureChatGPTProvider(options?: { activate?: boolean }): Promise<SavedProvider> {
+    const index = await this.readIndex()
+    let provider = index.providers.find(
+      (p) =>
+        p.presetId === CHATGPT_PROVIDER_PRESET_ID ||
+        p.authKind === 'chatgpt_oauth',
+    )
+    const wasCreated = !provider
+
+    if (!provider) {
+      provider = {
+        id: crypto.randomUUID(),
+        presetId: CHATGPT_PROVIDER_PRESET_ID,
+        name: CHATGPT_PROVIDER_NAME,
+        apiKey: '',
+        baseUrl: CHATGPT_PROVIDER_BASE_URL,
+        apiFormat: 'chatgpt_codex',
+        authKind: 'chatgpt_oauth',
+        models: { ...CHATGPT_PROVIDER_MODELS },
+        notes:
+          'Uses ChatGPT web OAuth and the Codex Responses backend. No API key is stored.',
+      }
+      index.providers.push(provider)
+    } else {
+      provider = {
+        ...provider,
+        apiFormat: 'chatgpt_codex',
+        authKind: 'chatgpt_oauth',
+        baseUrl: provider.baseUrl || CHATGPT_PROVIDER_BASE_URL,
+        apiKey: provider.apiKey ?? '',
+        models: {
+          ...CHATGPT_PROVIDER_MODELS,
+          ...provider.models,
+        },
+      }
+      const idx = index.providers.findIndex((p) => p.id === provider!.id)
+      index.providers[idx] = provider
+    }
+
+    const shouldActivate =
+      options?.activate === true ||
+      index.activeId === provider.id ||
+      (wasCreated && index.activeId === null)
+
+    if (shouldActivate) {
+      index.activeId = provider.id
+    }
+    await this.writeIndex(index)
+    if (shouldActivate) {
+      await this.syncToSettings(provider)
+    }
+    return provider
   }
 
   // --- Settings sync ---
@@ -301,6 +372,12 @@ export class ProviderService {
     const index = await this.readIndex()
     if (index.activeId) {
       const provider = index.providers.find(p => p.id === index.activeId)
+      if (provider?.authKind === 'chatgpt_oauth') {
+        const tokens = await chatgptAuthService.ensureFreshTokens()
+        if (tokens) {
+          return { hasAuth: true, source: 'cc-haha-provider', activeProvider: provider.name }
+        }
+      }
       if (provider?.apiKey) {
         return { hasAuth: true, source: 'cc-haha-provider', activeProvider: provider.name }
       }
@@ -333,6 +410,7 @@ export class ProviderService {
     baseUrl: string
     apiKey: string
     apiFormat: ApiFormat
+    authKind: ProviderAuthKind
   } | null> {
     if (providerId) {
       const provider = await this.getProvider(providerId)
@@ -340,6 +418,7 @@ export class ProviderService {
         baseUrl: provider.baseUrl,
         apiKey: provider.apiKey,
         apiFormat: provider.apiFormat ?? 'anthropic',
+        authKind: provider.authKind ?? 'api_key',
       }
     }
 
@@ -351,6 +430,7 @@ export class ProviderService {
       baseUrl: provider.baseUrl,
       apiKey: provider.apiKey,
       apiFormat: provider.apiFormat ?? 'anthropic',
+      authKind: provider.authKind ?? 'api_key',
     }
   }
 
@@ -358,6 +438,7 @@ export class ProviderService {
     baseUrl: string
     apiKey: string
     apiFormat: ApiFormat
+    authKind: ProviderAuthKind
   } | null> {
     return this.getProviderForProxy()
   }
@@ -373,7 +454,7 @@ export class ProviderService {
     const modelId = overrides?.modelId || provider.models.main
     const apiFormat = overrides?.apiFormat ?? provider.apiFormat ?? 'anthropic'
 
-    if (!baseUrl || !provider.apiKey) {
+    if (!baseUrl || (apiFormat !== 'chatgpt_codex' && !provider.apiKey)) {
       return { connectivity: { success: false, latencyMs: 0, error: 'Missing baseUrl or apiKey' } }
     }
     return this.testProviderConfig({
@@ -398,7 +479,7 @@ export class ProviderService {
     }
 
     // For native Anthropic format, no proxy pipeline to test
-    if (format === 'anthropic') {
+    if (format === 'anthropic' || format === 'chatgpt_codex') {
       return { connectivity: step1 }
     }
 
@@ -418,6 +499,58 @@ export class ProviderService {
   ): Promise<ProviderTestStepResult> {
     const start = Date.now()
     try {
+      if (format === 'chatgpt_codex') {
+        const tokens = await chatgptAuthService.ensureFreshTokens()
+        if (!tokens) {
+          return {
+            success: false,
+            latencyMs: Date.now() - start,
+            error: 'ChatGPT is not connected. Use Connect ChatGPT first.',
+            modelUsed: modelId,
+          }
+        }
+        const anthropicReq: AnthropicRequest = {
+          model: modelId,
+          max_tokens: 64,
+          messages: [{ role: 'user', content: 'Say "ok" and nothing else.' }],
+        }
+        const transformedBody = anthropicToChatGPTCodexRequest(anthropicReq)
+        transformedBody.stream = true
+        const response = await fetch(CHATGPT_CODEX_API_ENDPOINT, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${tokens.accessToken}`,
+            ...(tokens.accountId ? { 'ChatGPT-Account-Id': tokens.accountId } : {}),
+            originator: 'cc-haha',
+            'User-Agent': 'cc-haha',
+          },
+          body: JSON.stringify(transformedBody),
+          signal: AbortSignal.timeout(30000),
+        })
+        const latencyMs = Date.now() - start
+        if (!response.ok) {
+          const errText = await response.text().catch(() => '')
+          return {
+            success: false,
+            latencyMs,
+            error: `Upstream HTTP ${response.status}: ${errText.slice(0, 200)}`,
+            modelUsed: modelId,
+            httpStatus: response.status,
+          }
+        }
+        const streamText = await response.text().catch(() => '')
+        if (!streamText.includes('response.completed') && !streamText.includes('response.output_text')) {
+          return {
+            success: false,
+            latencyMs,
+            error: 'Unexpected Codex stream response',
+            modelUsed: modelId,
+            httpStatus: response.status,
+          }
+        }
+        return { success: true, latencyMs, modelUsed: modelId, httpStatus: response.status }
+      }
       const { url, headers, body } = buildDirectTestRequest(base, apiKey, modelId, format)
       const response = await fetch(url, {
         method: 'POST',

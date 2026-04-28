@@ -14,6 +14,20 @@
     "websiteUrl": "https://www.anthropic.com/claude-code"
   },
   {
+    "id": "chatgpt",
+    "name": "ChatGPT Connect",
+    "baseUrl": "https://chatgpt.com/backend-api/codex",
+    "apiFormat": "chatgpt_codex",
+    "defaultModels": {
+      "main": "gpt-5.4",
+      "haiku": "gpt-5.4-mini",
+      "sonnet": "gpt-5.4",
+      "opus": "gpt-5.4"
+    },
+    "needsApiKey": false,
+    "websiteUrl": "https://chatgpt.com"
+  },
+  {
     "id": "deepseek",
     "name": "DeepSeek",
     "baseUrl": "https://api.deepseek.com/anthropic",

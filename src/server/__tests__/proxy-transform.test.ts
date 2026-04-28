@@ -328,6 +328,26 @@ describe('anthropicToOpenaiResponses', () => {
     }
   })
 
+  test('tools conversion uses Responses API schema', () => {
+    const req: AnthropicRequest = {
+      model: 'gpt-4o',
+      max_tokens: 100,
+      messages: [{ role: 'user', content: 'Hi' }],
+      tools: [{
+        name: 'get_weather',
+        description: 'Get weather',
+        input_schema: { type: 'object', properties: { city: { type: 'string' } } },
+      }],
+    }
+    const result = anthropicToOpenaiResponses(req)
+    expect(result.tools).toEqual([{
+      type: 'function',
+      name: 'get_weather',
+      description: 'Get weather',
+      parameters: { type: 'object', properties: { city: { type: 'string' } } },
+    }])
+  })
+
   test('tool_result lifted to function_call_output', () => {
     const req: AnthropicRequest = {
       model: 'gpt-4o',

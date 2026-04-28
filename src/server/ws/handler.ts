@@ -54,6 +54,18 @@ const runtimeOverrides = new Map<string, {
   modelId: string
 }>()
 
+type SessionStartupOverrides = {
+  permissionMode?: string
+}
+
+const ALLOWED_STARTUP_PERMISSION_MODES = new Set([
+  'default',
+  'acceptEdits',
+  'bypassPermissions',
+  'plan',
+  'dontAsk',
+])
+
 const runtimeTransitionPromises = new Map<string, Promise<void>>()
 const sessionStartupPromises = new Map<string, Promise<void>>()
 const prewarmPendingSessions = new Set<string>()
@@ -72,10 +84,13 @@ export type WebSocketData = {
   sdkToken: string | null
   serverPort: number
   serverHost: string
+  outputCallback?: (msg: any) => void
+  outputStreamKey?: string
 }
 
 // Active WebSocket sessions
-const activeSessions = new Map<string, ServerWebSocket<WebSocketData>>()
+const activeSessions = new Map<string, Set<ServerWebSocket<WebSocketData>>>()
+const prewarmMetadataCallbacks = new Map<string, (msg: any) => void>()
 
 export const handleWebSocket = {
   open(ws: ServerWebSocket<WebSocketData>) {
@@ -102,7 +117,7 @@ export const handleWebSocket = {
       sessionCleanupTimers.delete(sessionId)
     }
 
-    activeSessions.set(sessionId, ws)
+    addActiveClient(sessionId, ws)
     if (prewarmedSessions.has(sessionId)) {
       bindPrewarmMetadataCapture(sessionId)
     } else {
@@ -179,14 +194,14 @@ export const handleWebSocket = {
 
     console.log(`[WS] Client disconnected from session: ${sessionId} (${code}: ${reason})`)
     computerUseApprovalService.cancelSession(sessionId)
-    activeSessions.delete(sessionId)
-    conversationService.clearOutputCallbacks(sessionId)
+    removeOutputCallbackForSocket(sessionId, ws)
+    removeActiveClient(sessionId, ws)
 
     // Schedule delayed cleanup: if the client doesn't reconnect within 30 seconds,
     // stop the CLI subprocess to avoid leaking resources.
     const cleanupTimer = setTimeout(() => {
       sessionCleanupTimers.delete(sessionId)
-      if (!activeSessions.has(sessionId)) {
+      if (!hasActiveClient(sessionId)) {
         console.log(`[WS] Session ${sessionId} not reconnected after 30s, stopping CLI subprocess`)
         conversationService.stopSession(sessionId)
         cleanupSessionRuntimeState(sessionId)
@@ -209,6 +224,7 @@ async function handleUserMessage(
   message: Extract<ClientMessage, { type: 'user_message' }>
 ) {
   const { sessionId } = ws.data
+  const startupOverrides = getUserMessageRuntimeOverrides(message)
 
   // Clear any stale stop flag from a previous turn
   sessionStopRequested.delete(sessionId)
@@ -236,7 +252,8 @@ async function handleUserMessage(
 
   // 启动 CLI 子进程（如果还没有）
   try {
-    await ensureCliSessionStarted(ws, sessionId, 'user_message')
+    await restartSessionForStartupOverrides(ws, sessionId, startupOverrides)
+    await ensureCliSessionStarted(ws, sessionId, 'user_message', startupOverrides)
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err)
     const code =
@@ -270,7 +287,7 @@ async function handleUserMessage(
   // any pre-turn SDK chatter as fresh chat history.
   let userMessageSent = false
 
-  rebindSessionOutput(sessionId, ws, {
+  rebindSessionOutputs(sessionId, {
     shouldForward: (cliMsg) => userMessageSent || (cliMsg.type === 'result' && cliMsg.is_error),
   })
 
@@ -577,13 +594,26 @@ function getStreamState(sessionId: string): SessionStreamState {
   return state
 }
 
-/** Clean up stream state when session disconnects */
-function cleanupStreamState(sessionId: string) {
-  sessionStreamStates.delete(sessionId)
+/** Clean up stream state when an output binding disconnects */
+function cleanupStreamState(streamKey: string) {
+  sessionStreamStates.delete(streamKey)
+}
+
+function cleanupStreamStatesForSession(sessionId: string) {
+  for (const key of sessionStreamStates.keys()) {
+    if (key === sessionId || key.startsWith(`${sessionId}:`)) {
+      sessionStreamStates.delete(key)
+    }
+  }
 }
 
 function cleanupSessionRuntimeState(sessionId: string) {
-  cleanupStreamState(sessionId)
+  const prewarmCallback = prewarmMetadataCallbacks.get(sessionId)
+  if (prewarmCallback) {
+    conversationService.removeOutputCallback(sessionId, prewarmCallback)
+    prewarmMetadataCallbacks.delete(sessionId)
+  }
+  cleanupStreamStatesForSession(sessionId)
   sessionSlashCommands.delete(sessionId)
   sessionTitleState.delete(sessionId)
   runtimeOverrides.delete(sessionId)
@@ -645,10 +675,16 @@ function bindPrewarmMetadataCapture(sessionId: string) {
   }
   if (!conversationService.hasSession(sessionId)) return
 
-  conversationService.clearOutputCallbacks(sessionId)
-  conversationService.onOutput(sessionId, (cliMsg) => {
+  const previous = prewarmMetadataCallbacks.get(sessionId)
+  if (previous) {
+    conversationService.removeOutputCallback(sessionId, previous)
+  }
+
+  const callback = (cliMsg: any) => {
     cacheSessionInitMetadata(sessionId, cliMsg)
-  })
+  }
+  prewarmMetadataCallbacks.set(sessionId, callback)
+  conversationService.onOutput(sessionId, callback)
 }
 
 async function resolveSessionWorkDir(sessionId: string, fallback = os.homedir()): Promise<string> {
@@ -671,14 +707,49 @@ async function resolveSessionWorkDir(sessionId: string, fallback = os.homedir())
   return workDir
 }
 
+function getUserMessageRuntimeOverrides(
+  message: Extract<ClientMessage, { type: 'user_message' }>,
+): SessionStartupOverrides | undefined {
+  const mode = typeof message.permissionMode === 'string' ? message.permissionMode : undefined
+  if (!mode) return undefined
+  if (!ALLOWED_STARTUP_PERMISSION_MODES.has(mode)) return undefined
+  return { permissionMode: mode }
+}
+
+async function restartSessionForStartupOverrides(
+  ws: ServerWebSocket<WebSocketData>,
+  sessionId: string,
+  startupOverrides?: SessionStartupOverrides,
+): Promise<void> {
+  const requestedMode = startupOverrides?.permissionMode
+  if (!requestedMode || !conversationService.hasSession(sessionId)) return
+
+  const currentMode = conversationService.getSessionPermissionMode(sessionId)
+  if (currentMode === requestedMode) return
+
+  const workDir = conversationService.getSessionWorkDir(sessionId)
+  conversationService.stopSession(sessionId)
+  const sdkUrl =
+    `ws://${ws.data.serverHost}:${ws.data.serverPort}/sdk/${sessionId}` +
+    `?token=${encodeURIComponent(crypto.randomUUID())}`
+  const runtimeSettings = {
+    ...(await getRuntimeSettings(sessionId)),
+    ...startupOverrides,
+  }
+  await conversationService.startSession(sessionId, workDir, sdkUrl, runtimeSettings)
+  console.log(`[WS] Restarted CLI for ${sessionId} with startup permission mode: ${requestedMode}`)
+}
+
 async function ensureCliSessionStarted(
   ws: ServerWebSocket<WebSocketData>,
   sessionId: string,
   reason: 'user_message' | 'prewarm_session',
+  startupOverrides?: SessionStartupOverrides,
 ): Promise<void> {
   const pendingStartup = sessionStartupPromises.get(sessionId)
   if (pendingStartup) {
     await pendingStartup
+    await restartSessionForStartupOverrides(ws, sessionId, startupOverrides)
     return
   }
 
@@ -686,7 +757,10 @@ async function ensureCliSessionStarted(
 
   const startup = (async () => {
     const workDir = await resolveSessionWorkDir(sessionId)
-    const runtimeSettings = await getRuntimeSettings(sessionId)
+    const runtimeSettings = {
+      ...(await getRuntimeSettings(sessionId)),
+      ...startupOverrides,
+    }
     const sdkUrl =
       `ws://${ws.data.serverHost}:${ws.data.serverPort}/sdk/${sessionId}` +
       `?token=${encodeURIComponent(crypto.randomUUID())}`
@@ -1045,6 +1119,56 @@ function sendError(ws: ServerWebSocket<WebSocketData>, message: string, code: st
   sendMessage(ws, { type: 'error', message, code })
 }
 
+function addActiveClient(sessionId: string, ws: ServerWebSocket<WebSocketData>) {
+  let clients = activeSessions.get(sessionId)
+  if (!clients) {
+    clients = new Set()
+    activeSessions.set(sessionId, clients)
+  }
+  clients.add(ws)
+}
+
+function removeActiveClient(sessionId: string, ws: ServerWebSocket<WebSocketData>) {
+  const clients = activeSessions.get(sessionId)
+  if (!clients) return
+  clients.delete(ws)
+  if (clients.size === 0) {
+    activeSessions.delete(sessionId)
+  }
+}
+
+function hasActiveClient(sessionId: string): boolean {
+  return (activeSessions.get(sessionId)?.size ?? 0) > 0
+}
+
+function removeOutputCallbackForSocket(
+  sessionId: string,
+  ws: ServerWebSocket<WebSocketData>,
+) {
+  const callback = ws.data.outputCallback
+  if (callback) {
+    conversationService.removeOutputCallback(sessionId, callback)
+  }
+  if (ws.data.outputStreamKey) {
+    cleanupStreamState(ws.data.outputStreamKey)
+  }
+  ws.data.outputCallback = undefined
+  ws.data.outputStreamKey = undefined
+}
+
+function rebindSessionOutputs(
+  sessionId: string,
+  options?: {
+    shouldForward?: (cliMsg: any) => boolean
+  },
+) {
+  const clients = activeSessions.get(sessionId)
+  if (!clients) return
+  for (const ws of clients) {
+    rebindSessionOutput(sessionId, ws, options)
+  }
+}
+
 function rebindSessionOutput(
   sessionId: string,
   ws: ServerWebSocket<WebSocketData>,
@@ -1054,13 +1178,15 @@ function rebindSessionOutput(
 ) {
   if (!conversationService.hasSession(sessionId)) return
 
-  conversationService.clearOutputCallbacks(sessionId)
-  conversationService.onOutput(sessionId, (cliMsg) => {
+  removeOutputCallbackForSocket(sessionId, ws)
+
+  const streamKey = `${sessionId}:${crypto.randomUUID()}`
+  const callback = (cliMsg: any) => {
     if (options?.shouldForward && !options.shouldForward(cliMsg)) {
       return
     }
 
-    const serverMsgs = translateCliMessage(cliMsg, sessionId)
+    const serverMsgs = translateCliMessage(cliMsg, streamKey)
     for (const msg of serverMsgs) {
       sendMessage(ws, msg)
     }
@@ -1068,7 +1194,11 @@ function rebindSessionOutput(
     if (cliMsg.type === 'result') {
       triggerTitleGeneration(ws, sessionId)
     }
-  })
+  }
+
+  ws.data.outputCallback = callback
+  ws.data.outputStreamKey = streamKey
+  conversationService.onOutput(sessionId, callback)
 }
 
 async function getRuntimeSettings(sessionId?: string): Promise<{
@@ -1158,9 +1288,11 @@ function enqueueRuntimeTransition(
  * Send a message to a specific session's WebSocket (for use by services)
  */
 export function sendToSession(sessionId: string, message: ServerMessage): boolean {
-  const ws = activeSessions.get(sessionId)
-  if (!ws) return false
-  ws.send(JSON.stringify(message))
+  const clients = activeSessions.get(sessionId)
+  if (!clients || clients.size === 0) return false
+  for (const ws of clients) {
+    ws.send(JSON.stringify(message))
+  }
   return true
 }
 

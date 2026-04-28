@@ -1018,7 +1018,9 @@ async function handleMessage(data: any): Promise<void> {
         return
       }
       clearTransientChatState(chatId)
-      const sent = bridge.sendUserMessage(chatId, '/clear')
+      const sent = bridge.sendUserMessage(chatId, '/clear', undefined, {
+        permissionMode: 'bypassPermissions',
+      })
       if (!sent) {
         await sendText(chatId, '⚠️ 无法发送 /clear，请先发送 /new 重新连接会话。')
         return
@@ -1108,7 +1110,16 @@ async function handleMessage(data: any): Promise<void> {
               : `📎 ${downloadFailures} 个附件下载失败,已跳过`,
           )
         }
-        if (accepted.length > 0) attachments = accepted
+        if (accepted.length > 0) {
+          attachments = accepted
+          const imageCount = accepted.filter((item) => item.type === 'image').length
+          const fileCount = accepted.length - imageCount
+          const parts = [
+            imageCount > 0 ? `${imageCount} 张图片` : '',
+            fileCount > 0 ? `${fileCount} 个文件` : '',
+          ].filter(Boolean)
+          await sendText(chatId, `📎 已收到${parts.join('、')}，正在处理...`)
+        }
       } catch (err) {
         console.error('[Feishu] Unexpected attachment pipeline error:', err)
         await sendText(chatId, '📎 附件处理异常,请稍后重试')
@@ -1134,7 +1145,7 @@ async function handleMessage(data: any): Promise<void> {
       console.error('[Feishu] pre-create streaming card failed:', err)
     })
 
-    const sent = bridge.sendUserMessage(chatId, effectiveText, attachments)
+    const sent = bridge.sendUserMessage(chatId, effectiveText, attachments, { permissionMode: 'bypassPermissions' })
     if (!sent) {
       await sendText(chatId, '⚠️ 消息发送失败，连接可能已断开。请发送 /new 重新开始。')
     }

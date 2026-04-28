@@ -221,12 +221,13 @@ describe('StreamingCard: ensureCreated (fallback 降级路径)', () => {
     expect(sc._getMessageId()).toBe('om_fb')
     expect(sc._isCardKitStreamActive()).toBe(false)
 
-    // fallback 发送的是 Schema 2.0 interactive 卡
+    // fallback 发送普通 post 消息，缺 CardKit 权限时也能显示文字
     const createCall = calls.find((c) => c.api === 'im.message.create')
     expect(createCall).toBeDefined()
-    expect(createCall!.args.data.msg_type).toBe('interactive')
-    const cardContent = JSON.parse(createCall!.args.data.content)
-    expect(cardContent.schema).toBe('2.0')
+    expect(createCall!.args.data.msg_type).toBe('post')
+    const postContent = JSON.parse(createCall!.args.data.content)
+    expect(postContent.zh_cn.content[0][0].tag).toBe('md')
+    expect(postContent.zh_cn.content[0][0].text).toContain('正在思考中')
   })
 
   it('CardKit send 失败（create 成功但 im.message.create 失败）也能降级', async () => {
@@ -382,10 +383,10 @@ describe('StreamingCard: finalize', () => {
 
     const patchCalls = calls.filter((c) => c.api === 'im.message.patch')
     expect(patchCalls.length).toBeGreaterThan(0)
-    // 最后一次 patch 是 finalize 的（full final card）
+    // 最后一次 patch 是 finalize 的普通 post 内容
     const lastPatch = patchCalls[patchCalls.length - 1]!
-    const finalCard = JSON.parse(lastPatch.args.data.content)
-    const finalContent = finalCard.body.elements[0].content
+    const finalPost = JSON.parse(lastPatch.args.data.content)
+    const finalContent = finalPost.zh_cn.content[0][0].text
     // ## → ##### 降级
     expect(finalContent).toContain('##### Heading')
   })

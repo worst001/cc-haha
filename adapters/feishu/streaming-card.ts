@@ -79,6 +79,14 @@ export function buildRenderedCard(renderedMarkdown: string): Record<string, unkn
   }
 }
 
+function buildRenderedPostContent(renderedMarkdown: string): string {
+  return JSON.stringify({
+    zh_cn: {
+      content: [[{ tag: 'md', text: renderedMarkdown || ' ' }]],
+    },
+  })
+}
+
 /** 错误卡片：红色 header + 错误文本。用于 abort() 兜底。 */
 export function buildErrorCard(message: string): Record<string, unknown> {
   return {
@@ -215,8 +223,8 @@ export class StreamingCard {
           params: { receive_id_type: 'chat_id' },
           data: {
             receive_id: this.deps.chatId,
-            msg_type: 'interactive',
-            content: JSON.stringify(buildRenderedCard(' ')),
+            msg_type: 'post',
+            content: buildRenderedPostContent('☁️ *正在思考中...*'),
           },
         })
         const mid = fallbackResp.data?.message_id
@@ -342,10 +350,10 @@ export class StreamingCard {
           this.sequence,
         )
       } else if (this.messageId) {
-        // Patch fallback 路径: 全量替换
+        // Patch fallback 路径: 用普通 post 消息兜底，避免缺 CardKit 权限时看不到任何文字。
         await this.deps.larkClient.im.message.patch({
           path: { message_id: this.messageId },
-          data: { content: JSON.stringify(buildRenderedCard(finalText)) },
+          data: { content: buildRenderedPostContent(finalText) },
         })
       }
     } catch (err) {
@@ -397,7 +405,7 @@ export class StreamingCard {
       } else {
         await this.deps.larkClient.im.message.patch({
           path: { message_id: this.messageId },
-          data: { content: JSON.stringify(errCard) },
+          data: { content: buildRenderedPostContent(err.message) },
         })
       }
     } catch (renderErr) {
@@ -544,11 +552,11 @@ export class StreamingCard {
         return
       }
     } else {
-      // Patch fallback 路径（CardKit 从未成功）
+      // Patch fallback 路径（CardKit 从未成功，使用普通 post 消息）
       try {
         await this.deps.larkClient.im.message.patch({
           path: { message_id: this.messageId },
-          data: { content: JSON.stringify(buildRenderedCard(finalText)) },
+          data: { content: buildRenderedPostContent(finalText) },
         })
         this.lastFlushedText = finalText
       } catch (err) {

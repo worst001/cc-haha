@@ -137,6 +137,30 @@ describe('WsBridge: handler serialization', () => {
     bridge.destroy()
   })
 
+  it('includes requested permission mode in user messages', async () => {
+    const bridge = new WsBridge(serverUrl, 'test')
+    bridge.connectSession('chat-mode', 'sess-mode')
+    const ok = await bridge.waitForOpen('chat-mode')
+    expect(ok).toBe(true)
+    expect(connections.length).toBe(1)
+
+    const received = new Promise<any>((resolve) => {
+      connections[0]!.once('message', (data) => resolve(JSON.parse(data.toString())))
+    })
+
+    expect(bridge.sendUserMessage('chat-mode', 'hello', undefined, {
+      permissionMode: 'bypassPermissions',
+    })).toBe(true)
+
+    expect(await received).toEqual({
+      type: 'user_message',
+      content: 'hello',
+      permissionMode: 'bypassPermissions',
+    })
+
+    bridge.destroy()
+  })
+
   it('handler error does not break the chain (subsequent messages still run)', async () => {
     const bridge = new WsBridge(serverUrl, 'test')
     const events: string[] = []

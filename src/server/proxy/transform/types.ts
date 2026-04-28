@@ -36,6 +36,13 @@ export type OpenAITool = {
   }
 }
 
+export type OpenAIResponsesTool = {
+  type: 'function'
+  name: string
+  description?: string
+  parameters?: Record<string, unknown>
+}
+
 export type OpenAIChatRequest = {
   model: string
   messages: OpenAIChatMessage[]
@@ -45,7 +52,7 @@ export type OpenAIChatRequest = {
   top_p?: number
   stop?: string | string[]
   stream?: boolean
-  tools?: OpenAITool[]
+  tools?: OpenAIResponsesTool[]
   tool_choice?: unknown
   reasoning_effort?: 'low' | 'medium' | 'high'
 }
@@ -110,6 +117,7 @@ export type OpenAIResponsesRequest = {
   model: string
   input: OpenAIResponsesInputItem[]
   instructions?: string
+  store?: boolean
   max_output_tokens?: number
   temperature?: number
   top_p?: number

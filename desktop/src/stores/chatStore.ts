@@ -127,6 +127,12 @@ const pendingTaskToolUseIds = new Set<string>()
 let msgCounter = 0
 const nextId = () => `msg-${++msgCounter}-${Date.now()}`
 
+function toImageDataUrl(data: string | undefined, mimeType?: string): string | undefined {
+  if (!data) return undefined
+  if (data.startsWith('data:') || data.startsWith('blob:')) return data
+  return `data:${mimeType || 'image/png'};base64,${data}`
+}
+
 // Streaming throttle for content_delta
 let pendingDelta = ''
 let flushTimer: ReturnType<typeof setTimeout> | null = null
@@ -270,7 +276,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         ? attachments.map((a) => ({
             type: a.type,
             name: a.name || a.path || a.mimeType || a.type,
-            data: a.data,
+            data: a.type === 'image' ? toImageDataUrl(a.data, a.mimeType) : a.data,
             mimeType: a.mimeType,
           }))
         : undefined
@@ -814,7 +820,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 // ─── History mapping helpers (unchanged from original) ─────────
 
 type AssistantHistoryBlock = { type: string; text?: string; thinking?: string; name?: string; id?: string; input?: unknown }
-type UserHistoryBlock = { type: string; text?: string; tool_use_id?: string; content?: unknown; is_error?: boolean; source?: { data?: string }; mimeType?: string; media_type?: string; name?: string }
+type UserHistoryBlock = { type: string; text?: string; tool_use_id?: string; content?: unknown; is_error?: boolean; source?: { data?: string; media_type?: string }; mimeType?: string; media_type?: string; name?: string }
 
 /**
  * Check if text is a teammate-message (internal agent-to-agent communication).
@@ -999,7 +1005,15 @@ export function mapHistoryMessagesToUiMessages(
         } else if (block.type === 'text' && block.text) {
           textParts.push(block.text)
         }
-        else if (block.type === 'image') attachments.push({ type: 'image', name: block.name || 'image', data: block.source?.data, mimeType: block.mimeType || block.media_type })
+        else if (block.type === 'image') {
+          const mimeType = block.mimeType || block.media_type || block.source?.media_type
+          attachments.push({
+            type: 'image',
+            name: block.name || 'image',
+            data: toImageDataUrl(block.source?.data, mimeType),
+            mimeType,
+          })
+        }
         else if (block.type === 'file') attachments.push({ type: 'file', name: block.name || 'file' })
         else if (block.type === 'tool_result') uiMessages.push({ id: nextId(), type: 'tool_result', toolUseId: block.tool_use_id ?? '', content: block.content, isError: !!block.is_error, timestamp, parentToolUseId: msg.parentToolUseId })
       }

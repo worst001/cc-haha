@@ -126,7 +126,18 @@ export const en = {
   'settings.providers.apiFormatAnthropic': 'Anthropic Messages (native)',
   'settings.providers.apiFormatOpenaiChat': 'OpenAI Chat Completions (proxy)',
   'settings.providers.apiFormatOpenaiResponses': 'OpenAI Responses API (proxy)',
+  'settings.providers.apiFormatChatgptCodex': 'ChatGPT Codex (web auth)',
+  'settings.providers.noApiKeyRequired': 'No API key required. Connect ChatGPT below to authorize this provider.',
   'settings.providers.proxyHint': 'Requests will be translated via the local proxy',
+  'settings.chatgptConnect.title': 'ChatGPT Connect',
+  'settings.chatgptConnect.description': 'Authorize with ChatGPT in the browser and use Codex-backed GPT models without an API key.',
+  'settings.chatgptConnect.intro': 'Connect a ChatGPT Pro/Plus account. After login, cc-haha will create and activate a ChatGPT provider automatically.',
+  'settings.chatgptConnect.connect': 'Connect ChatGPT',
+  'settings.chatgptConnect.connecting': 'Starting...',
+  'settings.chatgptConnect.connected': 'Connected to ChatGPT',
+  'settings.chatgptConnect.reconnect': 'Reconnect',
+  'settings.chatgptConnect.disconnect': 'Disconnect',
+  'settings.chatgptConnect.disconnecting': 'Disconnecting...',
 
   // Settings > Permissions
   'settings.permissions.title': 'Permission Mode',

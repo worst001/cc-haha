@@ -305,4 +305,42 @@ describe('ConversationService', () => {
     expect(args).toContain('--effort')
     expect(args).toContain('max')
   })
+
+  test('buildUserContent sends image attachments as image blocks instead of @ file references', () => {
+    const service = new ConversationService() as any
+    const encoded = Buffer.from('fake-image').toString('base64')
+    const content = service.buildUserContent('这个你能看到么', 'session-1', [
+      {
+        type: 'image',
+        name: 'screenshot.png',
+        data: encoded,
+        mimeType: 'image/png',
+      },
+    ]) as Array<Record<string, any>>
+
+    expect(content).toHaveLength(2)
+    expect(content[0].type).toBe('image')
+    expect(content[0].source.media_type).toBe('image/png')
+    expect(content[0].source.data).toBe(encoded)
+    expect(content[1]).toEqual({ type: 'text', text: '这个你能看到么' })
+    expect(content[1].text).not.toContain('@\"')
+  })
+
+  test('buildUserContent reads image path attachments as image blocks', async () => {
+    const imagePath = path.join(tmpDir, 'screen.png')
+    await fs.writeFile(imagePath, Buffer.from('path-image'))
+
+    const service = new ConversationService() as any
+    const content = service.buildUserContent('看图', 'session-1', [
+      {
+        type: 'image',
+        path: imagePath,
+        mimeType: 'image/png',
+      },
+    ]) as Array<Record<string, any>>
+
+    expect(content[0].type).toBe('image')
+    expect(content[0].source.data).toBe(Buffer.from('path-image').toString('base64'))
+    expect(content[1]).toEqual({ type: 'text', text: '看图' })
+  })
 })

@@ -1,6 +1,7 @@
 // desktop/src/types/provider.ts
 
-export type ApiFormat = 'anthropic' | 'openai_chat' | 'openai_responses'
+export type ApiFormat = 'anthropic' | 'openai_chat' | 'openai_responses' | 'chatgpt_codex'
+export type ProviderAuthKind = 'api_key' | 'chatgpt_oauth'
 
 export type ModelMapping = {
   main: string
@@ -16,6 +17,7 @@ export type SavedProvider = {
   apiKey: string  // masked from server
   baseUrl: string
   apiFormat: ApiFormat
+  authKind?: ProviderAuthKind
   models: ModelMapping
   notes?: string
 }
@@ -26,6 +28,7 @@ export type CreateProviderInput = {
   apiKey: string
   baseUrl: string
   apiFormat?: ApiFormat
+  authKind?: ProviderAuthKind
   models: ModelMapping
   notes?: string
 }
@@ -35,6 +38,7 @@ export type UpdateProviderInput = {
   apiKey?: string
   baseUrl?: string
   apiFormat?: ApiFormat
+  authKind?: ProviderAuthKind
   models?: ModelMapping
   notes?: string
 }

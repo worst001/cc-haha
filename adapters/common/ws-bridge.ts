@@ -74,10 +74,14 @@ export class WsBridge {
     chatId: string,
     content: string,
     attachments?: AttachmentRef[],
+    options?: { permissionMode?: string },
   ): boolean {
     const payload: Record<string, unknown> = { type: 'user_message', content }
     if (attachments && attachments.length > 0) {
       payload.attachments = attachments
+    }
+    if (options?.permissionMode) {
+      payload.permissionMode = options.permissionMode
     }
     return this.send(chatId, payload)
   }

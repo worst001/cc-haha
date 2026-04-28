@@ -225,6 +225,13 @@ export class ConversationService {
     }
   }
 
+  removeOutputCallback(sessionId: string, callback: (msg: any) => void): void {
+    const session = this.sessions.get(sessionId)
+    if (session) {
+      session.outputCallbacks = session.outputCallbacks.filter((cb) => cb !== callback)
+    }
+  }
+
   clearOutputCallbacks(sessionId: string): void {
     const session = this.sessions.get(sessionId)
     if (session) {
@@ -390,7 +397,7 @@ export class ConversationService {
               : undefined,
           })
         }
-        for (const cb of session.outputCallbacks) {
+        for (const cb of [...session.outputCallbacks]) {
           cb(msg)
         }
       } catch {
@@ -804,21 +811,24 @@ export class ConversationService {
     sessionId: string,
     attachments?: AttachmentRef[],
   ): Array<Record<string, unknown>> {
-    const prefix = this.materializeAttachments(sessionId, attachments)
+    const { prefix, imageBlocks } = this.materializeAttachments(sessionId, attachments)
     const trimmed = content.trim()
     const text = prefix
       ? `${prefix}${trimmed || 'Please analyze the attached files.'}`.trim()
       : trimmed
 
-    return [{ type: 'text', text }]
+    return [
+      ...imageBlocks,
+      { type: 'text', text: text || 'Please analyze the attached image.' },
+    ]
   }
 
   private materializeAttachments(
     sessionId: string,
     attachments?: AttachmentRef[],
-  ): string {
+  ): { prefix: string; imageBlocks: Array<Record<string, unknown>> } {
     if (!attachments || attachments.length === 0) {
-      return ''
+      return { prefix: '', imageBlocks: [] }
     }
 
     const uploadDir = path.join(
@@ -829,9 +839,26 @@ export class ConversationService {
     fs.mkdirSync(uploadDir, { recursive: true })
 
     const savedPaths: string[] = []
+    const imageBlocks: Array<Record<string, unknown>> = []
     for (const attachment of attachments) {
       if (attachment.path) {
-        savedPaths.push(attachment.path)
+        if (attachment.type === 'image') {
+          try {
+            const payload = fs.readFileSync(attachment.path)
+            imageBlocks.push({
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: attachment.mimeType || 'image/png',
+                data: payload.toString('base64'),
+              },
+            })
+          } catch {
+            savedPaths.push(attachment.path)
+          }
+        } else {
+          savedPaths.push(attachment.path)
+        }
         continue
       }
 
@@ -844,14 +871,27 @@ export class ConversationService {
       const fileName = this.sanitizeAttachmentName(attachment.name, attachment.type, ext)
       const outPath = path.join(uploadDir, `${crypto.randomUUID()}-${fileName}`)
       fs.writeFileSync(outPath, payload)
-      savedPaths.push(outPath)
+
+      if (attachment.type === 'image') {
+        imageBlocks.push({
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: attachment.mimeType || 'image/png',
+            data: payload.toString('base64'),
+          },
+        })
+      } else {
+        savedPaths.push(outPath)
+      }
     }
 
-    if (savedPaths.length === 0) {
-      return ''
+    return {
+      prefix: savedPaths.length > 0
+        ? savedPaths.map((filePath) => `@"${filePath}"`).join(' ') + ' '
+        : '',
+      imageBlocks,
     }
-
-    return savedPaths.map((filePath) => `@"${filePath}"`).join(' ') + ' '
   }
 
   private parseAttachmentData(data: string): Buffer | null {

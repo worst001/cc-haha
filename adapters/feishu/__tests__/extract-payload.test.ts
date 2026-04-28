@@ -69,6 +69,20 @@ describe('extractInboundPayload', () => {
     ])
   })
 
+  it('extracts text and images from root-level post content', () => {
+    const content = JSON.stringify({
+      content: [
+        [{ tag: 'img', image_key: 'img_root_1' }],
+        [{ tag: 'text', text: '你看下这个你能看到么' }],
+      ],
+    })
+    const result = extractInboundPayload(content, 'post')
+    expect(result.text).toBe('你看下这个你能看到么')
+    expect(result.pendingDownloads).toEqual([
+      { kind: 'image', fileKey: 'img_root_1' },
+    ])
+  })
+
   it('returns empty on malformed JSON', () => {
     const result = extractInboundPayload('not json', 'text')
     expect(result.text).toBe('')

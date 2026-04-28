@@ -416,6 +416,99 @@ describe('WebSocket Chat Integration', () => {
     expect(statusMsgs[0].state).toBe('thinking')
   })
 
+  it('should stream one turn to multiple clients on the same session', async () => {
+    const sessionId = `chat-multi-${crypto.randomUUID()}`
+    const wsA = new WebSocket(`${wsUrl}/ws/${sessionId}`)
+    const wsB = new WebSocket(`${wsUrl}/ws/${sessionId}`)
+    const messagesA: any[] = []
+    const messagesB: any[] = []
+    let connectedA = false
+    let connectedB = false
+    let sent = false
+    let completeA = false
+    let completeB = false
+
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        wsA.close()
+        wsB.close()
+        reject(new Error(`Timed out waiting for multi-client stream for session ${sessionId}`))
+      }, 30_000)
+
+      const maybeSend = () => {
+        if (!sent && connectedA && connectedB) {
+          sent = true
+          wsA.send(JSON.stringify({ type: 'user_message', content: 'hello both clients' }))
+        }
+      }
+
+      const maybeDone = () => {
+        if (completeA && completeB) {
+          clearTimeout(timeout)
+          wsA.close()
+          wsB.close()
+          resolve()
+        }
+      }
+
+      wsA.onmessage = (event) => {
+        const msg = JSON.parse(event.data as string)
+        messagesA.push(msg)
+        if (msg.type === 'connected') {
+          connectedA = true
+          maybeSend()
+        }
+        if (msg.type === 'error') {
+          clearTimeout(timeout)
+          wsA.close()
+          wsB.close()
+          reject(new Error(msg.message))
+        }
+        if (msg.type === 'message_complete') {
+          completeA = true
+          maybeDone()
+        }
+      }
+
+      wsB.onmessage = (event) => {
+        const msg = JSON.parse(event.data as string)
+        messagesB.push(msg)
+        if (msg.type === 'connected') {
+          connectedB = true
+          maybeSend()
+        }
+        if (msg.type === 'error') {
+          clearTimeout(timeout)
+          wsA.close()
+          wsB.close()
+          reject(new Error(msg.message))
+        }
+        if (msg.type === 'message_complete') {
+          completeB = true
+          maybeDone()
+        }
+      }
+
+      wsA.onerror = () => {
+        clearTimeout(timeout)
+        wsA.close()
+        wsB.close()
+        reject(new Error(`WebSocket A error for session ${sessionId}`))
+      }
+      wsB.onerror = () => {
+        clearTimeout(timeout)
+        wsA.close()
+        wsB.close()
+        reject(new Error(`WebSocket B error for session ${sessionId}`))
+      }
+    })
+
+    expect(messagesA.some((m) => m.type === 'content_delta')).toBe(true)
+    expect(messagesB.some((m) => m.type === 'content_delta')).toBe(true)
+    expect(messagesA.some((m) => m.type === 'message_complete')).toBe(true)
+    expect(messagesB.some((m) => m.type === 'message_complete')).toBe(true)
+  })
+
   it('should continue chat when SDK init arrives only after the first user turn', async () => {
     const messages = await withMockInitMode('on_first_user', () =>
       runTurn('chat-test-lazy-init', 'Hello after lazy init'),

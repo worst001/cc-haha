@@ -26,6 +26,7 @@ import { McpSettings } from './McpSettings'
 import { TerminalSettings } from './TerminalSettings'
 import { useUIStore, type SettingsTab } from '../stores/uiStore'
 import { ClaudeOfficialLogin } from '../components/settings/ClaudeOfficialLogin'
+import { ChatGPTConnect } from '../components/settings/ChatGPTConnect'
 import { useUpdateStore } from '../stores/updateStore'
 import { formatBytes } from '../lib/formatBytes'
 
@@ -130,6 +131,14 @@ function ProviderSettings() {
     () => new Map(presets.map((preset) => [preset.id, preset])),
     [presets],
   )
+  const chatgptProvider = useMemo(
+    () => providers.find(isChatGPTProvider) ?? null,
+    [providers],
+  )
+  const visibleProviders = useMemo(
+    () => providers.filter((provider) => provider.id !== chatgptProvider?.id),
+    [chatgptProvider?.id, providers],
+  )
 
   const handleDelete = async (provider: SavedProvider) => {
     if (activeId === provider.id) return
@@ -170,6 +179,8 @@ function ProviderSettings() {
   }
 
   const isOfficialActive = activeId === null
+  const isChatGPTActive = chatgptProvider !== null && activeId === chatgptProvider.id
+  const chatgptTest = chatgptProvider ? testResults[chatgptProvider.id] : undefined
 
   return (
     <div className="max-w-2xl">
@@ -215,6 +226,65 @@ function ProviderSettings() {
         )}
       </div>
 
+      <div
+        onClick={() => {
+          if (chatgptProvider && !isChatGPTActive) void handleActivate(chatgptProvider.id)
+        }}
+        className={`relative flex flex-col rounded-xl border transition-all mb-2 group ${
+          isChatGPTActive
+            ? 'border-[var(--color-brand)] bg-[var(--color-surface-container)] shadow-[var(--shadow-focus-ring)]'
+            : 'border-[var(--color-border)] hover:border-[var(--color-border-focus)] cursor-pointer'
+        }`}
+      >
+        <div className="flex items-center gap-4 px-4 py-3.5">
+          <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${isChatGPTActive ? 'bg-[var(--color-success)]' : 'bg-[var(--color-text-tertiary)]'}`} />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-[var(--color-text-primary)]">
+                {t('settings.chatgptConnect.title')}
+              </span>
+              <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-[var(--color-surface-container-high)] text-[var(--color-warning)] leading-none">
+                Codex
+              </span>
+              {isChatGPTActive && (
+                <span className="px-1.5 py-0.5 text-[10px] font-bold rounded border border-[var(--color-brand)]/18 bg-[var(--color-brand)]/14 text-[var(--color-brand)] leading-none">{t('settings.providers.default')}</span>
+              )}
+            </div>
+            <div className="text-xs text-[var(--color-text-tertiary)] mt-0.5">
+              {chatgptProvider
+                ? `${chatgptProvider.baseUrl} · ${chatgptProvider.models.main}`
+                : t('settings.chatgptConnect.description')}
+            </div>
+            {chatgptTest && !chatgptTest.loading && chatgptTest.result && (
+              <div className="text-xs mt-1 flex flex-col gap-0.5">
+                <span className={chatgptTest.result.connectivity.success ? 'text-[var(--color-success)]' : 'text-[var(--color-error)]'}>
+                  {chatgptTest.result.connectivity.success
+                    ? t('settings.providers.connectivityOk', { latency: String(chatgptTest.result.connectivity.latencyMs) })
+                    : t('settings.providers.connectivityFailed', { error: chatgptTest.result.connectivity.error || '' })}
+                </span>
+              </div>
+            )}
+          </div>
+          {chatgptProvider && (
+            <div
+              className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+              onClick={(event) => event.stopPropagation()}
+            >
+              {!isChatGPTActive && (
+                <Button variant="ghost" size="sm" onClick={() => handleActivate(chatgptProvider.id)}>{t('settings.providers.setDefault')}</Button>
+              )}
+              <Button variant="ghost" size="sm" onClick={() => handleTest(chatgptProvider)} loading={chatgptTest?.loading}>{t('settings.providers.test')}</Button>
+            </div>
+          )}
+        </div>
+        <div
+          className="px-4 pb-4 pt-3 border-t border-[var(--color-border-separator)]"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <ChatGPTConnect />
+        </div>
+      </div>
+
       {/* Saved providers */}
       {isLoading && providers.length === 0 ? (
         <div className="flex justify-center py-8">
@@ -222,17 +292,20 @@ function ProviderSettings() {
         </div>
       ) : (
         <div className="flex flex-col gap-2">
-          {providers.map((provider) => {
+          {visibleProviders.map((provider) => {
             const isActive = activeId === provider.id
             const test = testResults[provider.id]
             const preset = presetMap.get(provider.presetId)
             return (
               <div
                 key={provider.id}
+                onClick={() => {
+                  if (!isActive) void handleActivate(provider.id)
+                }}
                 className={`relative flex items-center gap-4 px-4 py-3.5 rounded-xl border transition-all group ${
                   isActive
                     ? 'border-[var(--color-brand)] bg-[var(--color-surface-container)] shadow-[var(--shadow-focus-ring)]'
-                    : 'border-[var(--color-border)] hover:border-[var(--color-border-focus)]'
+                    : 'border-[var(--color-border)] hover:border-[var(--color-border-focus)] cursor-pointer'
                 }`}
               >
                 <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${isActive ? 'bg-[var(--color-success)]' : 'bg-[var(--color-text-tertiary)]'}`} />
@@ -244,7 +317,7 @@ function ProviderSettings() {
                     )}
                     {provider.apiFormat && provider.apiFormat !== 'anthropic' && (
                       <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-[var(--color-surface-container-high)] text-[var(--color-warning)] leading-none">
-                        {provider.apiFormat === 'openai_chat' ? 'OpenAI Chat' : 'OpenAI Responses'}
+                        {formatApiFormatLabel(provider.apiFormat, t)}
                       </span>
                     )}
                     {isActive && (
@@ -271,7 +344,10 @@ function ProviderSettings() {
                     </div>
                   )}
                 </div>
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                <div
+                  className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                  onClick={(event) => event.stopPropagation()}
+                >
                   {!isActive && (
                     <Button variant="ghost" size="sm" onClick={() => handleActivate(provider.id)}>{t('settings.providers.setDefault')}</Button>
                   )}
@@ -339,9 +415,22 @@ function buildFallbackPreset(provider?: SavedProvider): ProviderPreset {
     baseUrl: provider?.baseUrl ?? '',
     apiFormat: provider?.apiFormat ?? 'anthropic',
     defaultModels: provider?.models ?? { main: '', haiku: '', sonnet: '', opus: '' },
-    needsApiKey: true,
+    needsApiKey: provider?.authKind === 'chatgpt_oauth' ? false : true,
     websiteUrl: '',
   }
+}
+
+function isChatGPTProvider(provider: SavedProvider): boolean {
+  return provider.authKind === 'chatgpt_oauth' ||
+    provider.apiFormat === 'chatgpt_codex' ||
+    provider.presetId === 'chatgpt'
+}
+
+function formatApiFormatLabel(apiFormat: ApiFormat, t: ReturnType<typeof useTranslation>): string {
+  if (apiFormat === 'openai_chat') return t('settings.providers.apiFormatOpenaiChat')
+  if (apiFormat === 'openai_responses') return t('settings.providers.apiFormatOpenaiResponses')
+  if (apiFormat === 'chatgpt_codex') return t('settings.providers.apiFormatChatgptCodex')
+  return t('settings.providers.apiFormatAnthropic')
 }
 
 function ProviderFormModal({ open, onClose, mode, provider, presets }: ProviderFormProps) {
@@ -414,7 +503,8 @@ function ProviderFormModal({ open, onClose, mode, provider, presets }: ProviderF
   }
 
   const isCustom = selectedPreset.id === 'custom'
-  const canSubmit = name.trim() && baseUrl.trim() && (mode === 'edit' || apiKey.trim()) && models.main.trim() && !settingsJsonError
+  const needsApiKey = selectedPreset.needsApiKey && apiFormat !== 'chatgpt_codex'
+  const canSubmit = name.trim() && baseUrl.trim() && (mode === 'edit' || !needsApiKey || apiKey.trim()) && models.main.trim() && !settingsJsonError
 
   const handleSubmit = async () => {
     if (!canSubmit) return
@@ -439,6 +529,7 @@ function ProviderFormModal({ open, onClose, mode, provider, presets }: ProviderF
           apiKey: apiKey.trim(),
           baseUrl: baseUrl.trim(),
           apiFormat,
+          authKind: apiFormat === 'chatgpt_codex' ? 'chatgpt_oauth' : 'api_key',
           models,
           notes: notes.trim() || undefined,
         })
@@ -447,6 +538,7 @@ function ProviderFormModal({ open, onClose, mode, provider, presets }: ProviderF
           name: name.trim(),
           baseUrl: baseUrl.trim(),
           apiFormat,
+          authKind: apiFormat === 'chatgpt_codex' ? 'chatgpt_oauth' : 'api_key',
           models,
           notes: notes.trim() || undefined,
         }
@@ -475,7 +567,7 @@ function ProviderFormModal({ open, onClose, mode, provider, presets }: ProviderF
           apiFormat,
         })
       } else {
-        if (!apiKey.trim()) return
+        if (needsApiKey && !apiKey.trim()) return
         result = await testConfig({ baseUrl: baseUrl.trim(), apiKey: apiKey.trim(), modelId: models.main.trim(), apiFormat })
       }
       setTestResult(result)
@@ -552,6 +644,7 @@ function ProviderFormModal({ open, onClose, mode, provider, presets }: ProviderF
               <option value="anthropic">{t('settings.providers.apiFormatAnthropic')}</option>
               <option value="openai_chat">{t('settings.providers.apiFormatOpenaiChat')}</option>
               <option value="openai_responses">{t('settings.providers.apiFormatOpenaiResponses')}</option>
+              <option value="chatgpt_codex">{t('settings.providers.apiFormatChatgptCodex')}</option>
             </select>
             {apiFormat !== 'anthropic' && (
               <p className="text-[11px] text-[var(--color-text-tertiary)] mt-1">{t('settings.providers.proxyHint')}</p>
@@ -561,19 +654,25 @@ function ProviderFormModal({ open, onClose, mode, provider, presets }: ProviderF
           <div>
             <label className="text-sm font-medium text-[var(--color-text-primary)] mb-1 block">{t('settings.providers.apiFormat')}</label>
             <div className="text-xs text-[var(--color-text-tertiary)] px-3 py-2 rounded-[var(--radius-md)] bg-[var(--color-surface-container-low)] border border-[var(--color-border)]">
-              {apiFormat === 'openai_chat' ? t('settings.providers.apiFormatOpenaiChat') : t('settings.providers.apiFormatOpenaiResponses')}
+              {formatApiFormatLabel(apiFormat, t)}
             </div>
           </div>
         ) : null}
 
-        <Input
-          label={mode === 'edit' ? t('settings.providers.apiKeyKeep') : t('settings.providers.apiKey')}
-          required={mode === 'create'}
-          type="password"
-          value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
-          placeholder={mode === 'edit' ? '****' : 'sk-...'}
-        />
+        {needsApiKey ? (
+          <Input
+            label={mode === 'edit' ? t('settings.providers.apiKeyKeep') : t('settings.providers.apiKey')}
+            required={mode === 'create'}
+            type="password"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder={mode === 'edit' ? '****' : 'sk-...'}
+          />
+        ) : (
+          <div className="text-xs text-[var(--color-text-tertiary)] px-3 py-2 rounded-[var(--radius-md)] bg-[var(--color-surface-container-low)] border border-[var(--color-border)]">
+            {t('settings.providers.noApiKeyRequired')}
+          </div>
+        )}
 
         {/* Model Mapping */}
         <div>

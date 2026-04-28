@@ -69,7 +69,7 @@ export function extractInboundPayload(content: string, msgType: string): Inbound
   }
 
   if (msgType === 'post') {
-    const nodes = (parsed.zh_cn?.content ?? parsed.en_us?.content ?? []) as any[]
+    const nodes = (parsed.content ?? parsed.zh_cn?.content ?? parsed.en_us?.content ?? []) as any[]
     const flat = nodes.flat()
     const textParts: string[] = []
     const downloads: PendingDownload[] = []

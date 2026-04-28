@@ -11,8 +11,15 @@ export const ApiFormatSchema = z.enum([
   'anthropic',         // Native Anthropic Messages API (passthrough, no proxy)
   'openai_chat',       // OpenAI Chat Completions /v1/chat/completions
   'openai_responses',  // OpenAI Responses API /v1/responses
+  'chatgpt_codex',     // ChatGPT web OAuth → Codex Responses backend
 ])
 export type ApiFormat = z.infer<typeof ApiFormatSchema>
+
+export const ProviderAuthKindSchema = z.enum([
+  'api_key',
+  'chatgpt_oauth',
+])
+export type ProviderAuthKind = z.infer<typeof ProviderAuthKindSchema>
 
 export const ModelMappingSchema = z.object({
   main: z.string(),
@@ -28,6 +35,7 @@ export const SavedProviderSchema = z.object({
   apiKey: z.string(),
   baseUrl: z.string(),
   apiFormat: ApiFormatSchema.default('anthropic'),
+  authKind: ProviderAuthKindSchema.default('api_key'),
   models: ModelMappingSchema,
   notes: z.string().optional(),
 })
@@ -40,9 +48,10 @@ export const ProvidersIndexSchema = z.object({
 export const CreateProviderSchema = z.object({
   presetId: z.string().min(1),
   name: z.string().min(1),
-  apiKey: z.string(),
+  apiKey: z.string().default(''),
   baseUrl: z.string(),
   apiFormat: ApiFormatSchema.default('anthropic'),
+  authKind: ProviderAuthKindSchema.default('api_key'),
   models: ModelMappingSchema,
   notes: z.string().optional(),
 })
@@ -52,13 +61,14 @@ export const UpdateProviderSchema = z.object({
   apiKey: z.string().optional(),
   baseUrl: z.string().optional(),
   apiFormat: ApiFormatSchema.optional(),
+  authKind: ProviderAuthKindSchema.optional(),
   models: ModelMappingSchema.optional(),
   notes: z.string().optional(),
 })
 
 export const TestProviderSchema = z.object({
   baseUrl: z.string().url(),
-  apiKey: z.string().min(1),
+  apiKey: z.string().default(''),
   modelId: z.string().min(1),
   apiFormat: ApiFormatSchema.default('anthropic'),
 })

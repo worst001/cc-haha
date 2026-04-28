@@ -128,7 +128,18 @@ export const zh: Record<TranslationKey, string> = {
   'settings.providers.apiFormatAnthropic': 'Anthropic Messages (原生)',
   'settings.providers.apiFormatOpenaiChat': 'OpenAI Chat Completions (代理转换)',
   'settings.providers.apiFormatOpenaiResponses': 'OpenAI Responses API (代理转换)',
+  'settings.providers.apiFormatChatgptCodex': 'ChatGPT Codex (网页登录)',
+  'settings.providers.noApiKeyRequired': '无需 API 密钥。请在下方连接 ChatGPT 来授权此服务商。',
   'settings.providers.proxyHint': '请求将通过本地代理转换协议格式',
+  'settings.chatgptConnect.title': 'ChatGPT Connect',
+  'settings.chatgptConnect.description': '通过浏览器授权 ChatGPT，免 API Key 使用 Codex 后端 GPT 模型。',
+  'settings.chatgptConnect.intro': '连接 ChatGPT Pro/Plus 账号。登录成功后，cc-haha 会自动创建并启用 ChatGPT 服务商。',
+  'settings.chatgptConnect.connect': '连接 ChatGPT',
+  'settings.chatgptConnect.connecting': '启动中...',
+  'settings.chatgptConnect.connected': '已连接 ChatGPT',
+  'settings.chatgptConnect.reconnect': '重新连接',
+  'settings.chatgptConnect.disconnect': '断开连接',
+  'settings.chatgptConnect.disconnecting': '断开中...',
 
   // Settings > Permissions
   'settings.permissions.title': '权限模式',
