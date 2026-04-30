@@ -302,6 +302,8 @@ describe('ConversationService', () => {
     expect(args).toContain('--include-partial-messages')
     expect(args).toContain('--sdk-url')
     expect(args).toContain('--replay-user-messages')
+    expect(args).toContain('--max-turns')
+    expect(args).toContain('20')
   })
 
   test('buildChildEnv asks desktop SDK sessions to wait briefly for MCP tools', async () => {

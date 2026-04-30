@@ -52,6 +52,8 @@ type SessionStartOptions = {
   providerId?: string | null
 }
 
+const DEFAULT_DESKTOP_MAX_TURNS = 20
+
 export class ConversationStartupError extends Error {
   constructor(
     message: string,
@@ -94,6 +96,7 @@ export class ConversationService {
       '--include-partial-messages',
       ...(shouldResume ? ['--resume', sessionId] : ['--session-id', sessionId]),
       '--replay-user-messages',
+      ...this.getMaxTurnsArgs(),
       ...this.getRuntimeArgs(options),
       ...this.getPermissionArgs(options?.permissionMode, dangerousMode),
     ])
@@ -597,6 +600,18 @@ export class ConversationService {
     }
 
     return args
+  }
+
+  private getMaxTurnsArgs(): string[] {
+    const raw = process.env.CC_HAHA_DESKTOP_MAX_TURNS
+    const maxTurns =
+      raw === undefined ? DEFAULT_DESKTOP_MAX_TURNS : Number.parseInt(raw, 10)
+
+    if (!Number.isFinite(maxTurns) || maxTurns <= 0) {
+      return []
+    }
+
+    return ['--max-turns', String(maxTurns)]
   }
 
   private async buildChildEnv(
