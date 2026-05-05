@@ -15,6 +15,7 @@ import { checkOpus1mAccess, checkSonnet1mAccess } from '../../utils/model/check1
 import { getDefaultMainLoopModelSetting, isOpus1mMergeEnabled, renderDefaultModelSetting } from '../../utils/model/model.js';
 import { isModelAllowed } from '../../utils/model/modelAllowlist.js';
 import { validateModel } from '../../utils/model/validateModel.js';
+import { getStageRouterSettings } from '../../services/stageRouter/stageRouter.js';
 function ModelPickerWrapper(t0) {
   const $ = _c(17);
   const {
@@ -252,10 +253,12 @@ function ShowModelAndClose(t0) {
   const effortValue = useAppState(_temp9);
   const displayModel = renderModelLabel(mainLoopModel);
   const effortInfo = effortValue !== undefined ? ` (effort: ${effortValue})` : "";
+  const stageRouter = getStageRouterSettings();
+  const stageRouterInfo = stageRouter.enabled ? `\nStage router: Plan/Review=${stageRouter.planner}/${stageRouter.reviewer}, Exec=${stageRouter.executorModel}` : "";
   if (mainLoopModelForSession) {
-    onDone(`Current model: ${chalk.bold(renderModelLabel(mainLoopModelForSession))} (session override from plan mode)\nBase model: ${displayModel}${effortInfo}`);
+    onDone(`Current model: ${chalk.bold(renderModelLabel(mainLoopModelForSession))} (session override from plan mode)\nBase model: ${displayModel}${effortInfo}${stageRouterInfo}`);
   } else {
-    onDone(`Current model: ${displayModel}${effortInfo}`);
+    onDone(`Current model: ${displayModel}${effortInfo}${stageRouterInfo}`);
   }
   return null;
 }

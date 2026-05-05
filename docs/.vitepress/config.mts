@@ -22,6 +22,7 @@ const zhSidebar = [
       { text: '安装与启动', link: '/guide/quick-start' },
       { text: '环境变量', link: '/guide/env-vars' },
       { text: '第三方模型', link: '/guide/third-party-models' },
+      { text: 'Stage Router 切换命令', link: '/guide/stage-router-switching' },
       { text: '全局使用', link: '/guide/global-usage' },
       { text: '常见问题', link: '/guide/faq' },
     ],

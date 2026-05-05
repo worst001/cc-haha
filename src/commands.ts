@@ -43,6 +43,7 @@ import session from './commands/session/index.js'
 import share from './commands/share/index.js'
 import skills from './commands/skills/index.js'
 import status from './commands/status/index.js'
+import stageRouter from './commands/stage-router/index.js'
 import tasks from './commands/tasks/index.js'
 import teleport from './commands/teleport/index.js'
 /* eslint-disable @typescript-eslint/no-require-imports */
@@ -299,6 +300,7 @@ const COMMANDS = memoize((): Command[] => [
   session,
   skills,
   stats,
+  stageRouter,
   status,
   statusline,
   stickers,

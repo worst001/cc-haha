@@ -11,6 +11,8 @@ import { prepareContextForPlanMode } from '../../utils/permissions/permissionSet
 import { getPlan, getPlanFilePath } from '../../utils/plans.js';
 import { editFileInEditor } from '../../utils/promptEditor.js';
 import { renderToString } from '../../utils/staticRender.js';
+import { getCwd } from '../../utils/cwd.js';
+import { getStageRouterSettings, runStagePlan } from '../../services/stageRouter/stageRouter.js';
 function PlanDisplay(t0) {
   const $ = _c(11);
   const {
@@ -72,15 +74,29 @@ export async function call(onDone: LocalJSXCommandOnDone, context: LocalJSXComma
   // If not in plan mode, enable it
   if (currentMode !== 'plan') {
     handlePlanModeTransition(currentMode, 'plan');
+    const description = args.trim();
+    const stageRouter = getStageRouterSettings();
     setAppState(prev => ({
       ...prev,
+      ...(stageRouter.enabled ? {
+        mainLoopModel: stageRouter.executorModel,
+        mainLoopModelForSession: null,
+        thinkingEnabled: false
+      } : {}),
       toolPermissionContext: applyPermissionUpdate(prepareContextForPlanMode(prev.toolPermissionContext), {
         type: 'setMode',
         mode: 'plan',
         destination: 'session'
       })
     }));
-    const description = args.trim();
+    if (stageRouter.enabled && description && description !== 'open') {
+      const result = await runStagePlan({
+        task: description,
+        cwd: getCwd()
+      });
+      onDone(result.text);
+      return null;
+    }
     if (description && description !== 'open') {
       onDone('Enabled plan mode', {
         shouldQuery: true

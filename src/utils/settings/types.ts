@@ -713,6 +713,21 @@ export const SettingsSchema = lazySchema(() =>
         .string()
         .optional()
         .describe('Advisor model for the server-side advisor tool.'),
+      stageRouter: z
+        .object({
+          enabled: z.boolean().optional(),
+          planner: z.enum(['cursor', 'chatgpt']).optional(),
+          reviewer: z.enum(['cursor', 'chatgpt']).optional(),
+          executorModel: z.string().optional(),
+          cursorCommand: z.string().optional(),
+          cursorModel: z.string().optional(),
+          cursorReasoning: z.string().optional(),
+          cursorTimeoutMs: z.number().int().positive().optional(),
+        })
+        .optional()
+        .describe(
+          'Stage routing policy for using a stronger planner/reviewer and a separate executor model.',
+        ),
       fastMode: z
         .boolean()
         .optional()
