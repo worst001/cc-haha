@@ -9,7 +9,10 @@
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { ProviderService } from './providerService.js'
+import {
+  ProviderService,
+  resolveProviderModelId,
+} from './providerService.js'
 import { sessionService } from './sessionService.js'
 import {
   buildClaudeCliArgs,
@@ -661,8 +664,13 @@ export class ConversationService {
       typeof options?.providerId === 'string'
         ? await this.providerService.getProviderRuntimeEnv(options.providerId)
         : null
-    if (explicitProviderEnv && options?.model?.trim()) {
-      explicitProviderEnv.ANTHROPIC_MODEL = options.model.trim()
+    if (explicitProviderEnv && typeof options?.providerId === 'string' && options.model?.trim()) {
+      const provider = await this.providerService.getProvider(options.providerId)
+      explicitProviderEnv.ANTHROPIC_MODEL = resolveProviderModelId(
+        provider,
+        options.model,
+        explicitProviderEnv.ANTHROPIC_MODEL,
+      )
     }
 
     return {

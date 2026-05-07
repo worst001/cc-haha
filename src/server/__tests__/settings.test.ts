@@ -386,6 +386,32 @@ describe('Models API', () => {
     expect(body.model.id).toBe('glm-5-turbo')
   })
 
+  it('GET /api/models/current should ignore stale managed models from another provider', async () => {
+    const providerSvc = new ProviderService()
+    const provider = await providerSvc.addProvider({
+      presetId: 'deepseek',
+      name: 'DeepSeek',
+      baseUrl: 'https://api.deepseek.com/anthropic',
+      apiKey: 'test-key',
+      apiFormat: 'anthropic',
+      models: {
+        main: 'deepseek-v4-pro',
+        haiku: 'deepseek-v4-flash',
+        sonnet: 'deepseek-v4-pro',
+        opus: 'deepseek-v4-pro',
+      },
+    })
+    await providerSvc.activateProvider(provider.id)
+    await providerSvc.updateManagedSettings({ model: 'gpt-5.4' })
+
+    const { req, url, segments } = makeRequest('GET', '/api/models/current')
+    const res = await handleModelsApi(req, url, segments)
+
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.model.id).toBe('deepseek-v4-pro')
+  })
+
   it('PUT /api/models/current should persist to cc-haha managed settings when provider is active', async () => {
     const settingsSvc = new SettingsService()
     const providerSvc = new ProviderService()

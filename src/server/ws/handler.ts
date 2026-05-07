@@ -16,7 +16,11 @@ import {
 import { computerUseApprovalService } from '../services/computerUseApprovalService.js'
 import { sessionService } from '../services/sessionService.js'
 import { SettingsService } from '../services/settingsService.js'
-import { ProviderService } from '../services/providerService.js'
+import {
+  ProviderService,
+  isProviderModelId,
+  resolveProviderModelId,
+} from '../services/providerService.js'
 import { deriveTitle, generateTitle, saveAiTitle } from '../services/titleService.js'
 import { parseSlashCommand } from '../../utils/slashCommandParsing.js'
 import {
@@ -1366,19 +1370,27 @@ async function getRuntimeSettings(sessionId?: string): Promise<{
       typeof userSettings.effort === 'string' && userSettings.effort.trim()
         ? userSettings.effort
         : undefined
+    const model =
+      typeof runtimeOverride.providerId === 'string'
+        ? resolveProviderModelId(
+            await providerService.getProvider(runtimeOverride.providerId),
+            runtimeOverride.modelId,
+          )
+        : runtimeOverride.modelId
 
     return {
       permissionMode: await settingsService.getPermissionMode().catch(() => undefined),
-      model: runtimeOverride.modelId,
+      model,
       effort,
       providerId: runtimeOverride.providerId,
     }
   }
 
   // Check if a custom provider is active
-  const { activeId } = await providerService.listProviders()
+  const { providers, activeId } = await providerService.listProviders()
+  const activeProvider = activeId ? providers.find((p) => p.id === activeId) : null
   const userSettings = await settingsService.getUserSettings()
-  const providerSettings = activeId
+  const providerSettings = activeProvider
     ? await providerService.getManagedSettings()
     : undefined
   const modelSettings = providerSettings ?? userSettings
@@ -1392,16 +1404,18 @@ async function getRuntimeSettings(sessionId?: string): Promise<{
       : undefined
 
   let model: string | undefined
-  if (activeId) {
+  if (activeProvider) {
     // Provider is active — only consult provider-managed cc-haha settings.
     // Global ~/.claude/settings.json model values must not bleed into provider mode.
     const baseModel =
       typeof modelSettings.model === 'string' && modelSettings.model.trim()
         ? modelSettings.model
         : ''
-    if (baseModel) {
-      model = baseModel
-      if (modelContext) model += `:${modelContext}`
+    const env = (providerSettings?.env as Record<string, string> | undefined) ?? {}
+    const explicitModelIsValid = isProviderModelId(activeProvider, baseModel)
+    model = resolveProviderModelId(activeProvider, baseModel, env.ANTHROPIC_MODEL)
+    if (explicitModelIsValid && modelContext) {
+      model += `:${modelContext}`
     }
   } else {
     // No provider — pass model normally

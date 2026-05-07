@@ -9,7 +9,11 @@
  */
 
 import { SettingsService } from '../services/settingsService.js'
-import { ProviderService } from '../services/providerService.js'
+import {
+  ProviderService,
+  isProviderModelId,
+  resolveProviderModelId,
+} from '../services/providerService.js'
 import { ApiError, errorResponse } from '../middleware/errorHandler.js'
 
 // ─── Fallback models (used when no provider is configured) ────────────────────
@@ -107,7 +111,7 @@ async function handleCurrentModel(req: Request): Promise<Response> {
       ? await providerService.getManagedSettings()
       : await settingsService.getUserSettings()
     const explicitModel = (settings.model as string) || ''
-    const contextTier = (settings.modelContext as string) || undefined
+    let contextTier = (settings.modelContext as string) || undefined
     const env = (settings.env as Record<string, string>) || {}
 
     let currentModelId: string
@@ -118,12 +122,11 @@ async function handleCurrentModel(req: Request): Promise<Response> {
       // This avoids leaking global ~/.claude/settings.json model choices into
       // the active provider flow.
       const providerEnvModel = env.ANTHROPIC_MODEL
-      if (providerEnvModel && !explicitModel) {
-        currentModelId = providerEnvModel
-        currentModelName = providerEnvModel
-      } else {
-        currentModelId = explicitModel || providerEnvModel || activeProvider.models.main
-        currentModelName = currentModelId
+      const explicitModelIsValid = isProviderModelId(activeProvider, explicitModel)
+      currentModelId = resolveProviderModelId(activeProvider, explicitModel, providerEnvModel)
+      currentModelName = currentModelId
+      if (!explicitModelIsValid) {
+        contextTier = undefined
       }
     } else {
       // No provider — use settings model with context tier

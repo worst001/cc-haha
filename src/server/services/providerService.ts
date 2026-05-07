@@ -57,6 +57,39 @@ const CHATGPT_PROVIDER_MODELS = {
   opus: 'gpt-5.4',
 }
 
+export function getProviderModelIds(provider: Pick<SavedProvider, 'models'>): string[] {
+  return [
+    provider.models.main,
+    provider.models.haiku,
+    provider.models.sonnet,
+    provider.models.opus,
+  ]
+    .map((model) => model.trim())
+    .filter((model, index, models) => model.length > 0 && models.indexOf(model) === index)
+}
+
+export function isProviderModelId(
+  provider: Pick<SavedProvider, 'models'>,
+  modelId: string | undefined,
+): boolean {
+  const normalized = modelId?.trim()
+  return Boolean(normalized && getProviderModelIds(provider).includes(normalized))
+}
+
+export function resolveProviderModelId(
+  provider: Pick<SavedProvider, 'models'>,
+  preferredModel: string | undefined,
+  fallbackModel?: string,
+): string {
+  const preferred = preferredModel?.trim()
+  if (preferred && isProviderModelId(provider, preferred)) return preferred
+
+  const fallback = fallbackModel?.trim()
+  if (fallback && isProviderModelId(provider, fallback)) return fallback
+
+  return provider.models.main.trim()
+}
+
 function getPresetDefaultEnv(presetId: string): Record<string, string> {
   return PROVIDER_PRESETS.find((preset) => preset.id === presetId)?.defaultEnv ?? {}
 }

@@ -191,6 +191,32 @@ describe('ConversationService', () => {
     expect(env.ANTHROPIC_MODEL).toBe('new-provider-sonnet')
   })
 
+  test('buildChildEnv ignores stale session-selected models from another provider', async () => {
+    const providerService = new ProviderService()
+    const provider = await providerService.addProvider({
+      presetId: 'deepseek',
+      name: 'DeepSeek',
+      apiKey: 'provider-key',
+      baseUrl: 'https://api.deepseek.example/anthropic',
+      apiFormat: 'anthropic',
+      models: {
+        main: 'deepseek-v4-pro',
+        haiku: 'deepseek-v4-flash',
+        sonnet: 'deepseek-v4-pro',
+        opus: 'deepseek-v4-pro',
+      },
+    })
+
+    const service = new ConversationService() as any
+    const env = (await service.buildChildEnv('/tmp', undefined, {
+      providerId: provider.id,
+      model: 'gpt-5.4',
+    })) as Record<string, string>
+
+    expect(env.ANTHROPIC_BASE_URL).toBe('https://api.deepseek.example/anthropic')
+    expect(env.ANTHROPIC_MODEL).toBe('deepseek-v4-pro')
+  })
+
   test('buildChildEnv preserves provider capability overrides from presets', async () => {
     const providerService = new ProviderService()
     const provider = await providerService.addProvider({
