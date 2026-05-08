@@ -121,6 +121,16 @@ function Get-StagedArtifactName {
   }
 }
 
+function Test-ArtifactMatchesAppVersion {
+  param([string]$ArtifactName)
+
+  if ($ArtifactName -eq 'latest.json') {
+    return $true
+  }
+
+  return $ArtifactName.Contains("_$appVersion") -or $ArtifactName.Contains("-$appVersion")
+}
+
 function Resolve-OutputDirectory {
   param([string]$PreferredPath)
 
@@ -253,6 +263,10 @@ foreach ($root in $bundleRoots) {
   foreach ($pattern in $artifactPatterns) {
     $artifacts = Get-ChildItem -Path $root -Recurse -File -Filter $pattern -ErrorAction SilentlyContinue
     foreach ($artifact in $artifacts) {
+      if (-not (Test-ArtifactMatchesAppVersion -ArtifactName $artifact.Name)) {
+        continue
+      }
+
       $destinationName = Get-StagedArtifactName -ArtifactName $artifact.Name
       $destination = Join-Path $activeOutputDir $destinationName
       Copy-Item -LiteralPath $artifact.FullName -Destination $destination -Force
@@ -266,7 +280,7 @@ foreach ($root in $bundleRoots) {
 $msiInstaller = Get-LatestArtifact -SearchRoots @(
   (Join-Path $tauriTargetDir "$targetTriple\release\bundle\msi"),
   (Join-Path $tauriTargetDir 'release\bundle\msi')
-) -Patterns @('*.msi')
+) -Patterns @("*$appVersion*.msi")
 
 $msiInstallerPath = if ($msiInstaller) { $msiInstaller.FullName } else { 'not found' }
 
